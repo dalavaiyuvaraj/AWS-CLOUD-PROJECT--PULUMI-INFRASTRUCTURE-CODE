@@ -1,0 +1,6 @@
+name: assignment-4
+runtime:
+  name: nodejs
+  options:
+    typescript: false
+description: trail-1 assignment-4
