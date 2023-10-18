@@ -1,4 +1,4 @@
-encryptionsalt: v1:McvM0YDDzEY=:v1:mMCuzODRa/qGImLh:l+67l4KD2BloAg1eSsJnDbbHKT9w2g==
+encryptionsalt: v1:OrMoWDPjF88=:v1:UGIIDHxezH9WSl+8:vleF7jAG59ETtdDzWWpbWsjHPZ1how==
 config:
   aws:region: us-east-1
   aws:config:profile: yuvaraj-dev
