@@ -44,6 +44,7 @@ for (let i = 0; i < numPublicSubnets; i++) {
         vpcId: main.id,
         availabilityZone: region + availabilityZones[i % availabilityZones.length], // Rotate AZs
         cidrBlock: `10.0.${i + 1}.0/24`,
+        mapPublicIpOnLaunch: true,
         tags: {
             Name: subnetName,
         },
@@ -122,3 +123,101 @@ const publicRoute = new aws.ec2.Route(public_route, {
     destinationCidrBlock: public_route_cidr_des,
     gatewayId: internetGateway.id,
 });
+
+
+const appSecurityGroup = new aws.ec2.SecurityGroup("appSecurityGroup", {
+
+    vpcId: main.id,
+
+    ingress: [
+
+        {
+
+            fromPort: 22,
+
+            toPort: 22,
+
+            protocol: "tcp",
+
+            cidrBlocks: ["0.0.0.0/0"], // Allow SSH from anywhere
+
+        },
+
+        {
+
+            fromPort: 80,
+
+            toPort: 80,
+
+            protocol: "tcp",
+
+            cidrBlocks: ["0.0.0.0/0"], // Allow HTTP from anywhere
+
+        },
+
+        {
+
+            fromPort: 443,
+
+            toPort: 443,
+
+            protocol: "tcp",
+
+            cidrBlocks: ["0.0.0.0/0"], // Allow HTTPS from anywhere
+
+        },
+
+        // Add ingress rule for your application port here
+
+        {
+
+            fromPort: 3000,
+
+            toPort: 3000,
+
+            protocol: "tcp",
+
+            cidrBlocks: ["0.0.0.0/0"],
+
+        }
+
+    ],
+
+    tags: {
+
+        Name: "appSecurityGroup",
+
+    },
+
+});
+
+const ec2Instance = new aws.ec2.Instance("ec2Instance", {
+
+    instanceType: "t2.micro", // Set the desired instance type
+
+    ami: "ami-01f68517d258955e9", // Replace with your custom AMI ID
+
+    vpcSecurityGroupIds: [appSecurityGroup.id],
+
+    subnetId: publicSubnets[0].id, // Choose one of your public subnets
+
+    vpcId: main.id,
+
+    keyName: "EC2Instance_keypair",
+
+    rootBlockDevice: {
+
+        volumeSize: 25,
+
+        volumeType: "gp2",
+
+    },
+
+    tags: {
+
+        Name: "EC2Instance",
+
+    },
+
+});
+
