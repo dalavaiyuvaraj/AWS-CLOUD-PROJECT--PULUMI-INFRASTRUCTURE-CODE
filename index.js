@@ -296,6 +296,9 @@ const ec2Instance = new aws.ec2.Instance("ec2Instance", {
     sudo mysql -u csye6225 -h ${rdsHost} -p"Yuvarajmy#143" -e "GRANT ALL PRIVILEGES ON csye6225.* TO 'admin'@'%' WITH GRANT OPTION;"
     sudo mysql -u csye6225 -h ${rdsHost} -p"Yuvarajmy#143" -e "FLUSH PRIVILEGES;"
 
+    sudo chown csye6225:csye6225 /opt/webapp
+    sudo chmod 770 /opt/webapp
+
     #Creating a systemd file
     sudo echo "[Unit]
     Description=Webapp Service
@@ -309,7 +312,6 @@ const ec2Instance = new aws.ec2.Instance("ec2Instance", {
     ExecStart=/usr/bin/node /opt/webapp/index.js
     Restart=always
     RestartSec=3
-    TimeoutSec=60
 
     [Install]
     WantedBy=multi-user.target" > /etc/systemd/system/webapp.service
