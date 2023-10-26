@@ -2,3 +2,8 @@ encryptionsalt: v1:OrMoWDPjF88=:v1:UGIIDHxezH9WSl+8:vleF7jAG59ETtdDzWWpbWsjHPZ1h
 config:
   aws:region: us-east-1
   aws:config:profile: yuvaraj-dev
+  my_vpc:cidrBlock: "10.0.0.0/16"
+  my_publicRouteTable:cidrBlock: "0.0.0.0/0"
+  numOfSubnets:number: 3
+  availabilityZones:zones: "a,b,c"
+  

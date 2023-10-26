@@ -3,32 +3,23 @@ const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
 const awsx = require("@pulumi/awsx");
 
+const vpcCIDRBlock = new pulumi.Config("my_vpc").require("cidrBlock");
+const publicRouteTableCIDRBlock = new pulumi.Config("my_publicRouteTable").require("cidrBlock");
+const numOfSubnet = new pulumi.Config("numOfSubnets").require("number");
+const region = new pulumi.Config("aws").require("region");
+const configValue = new pulumi.Config("availabilityZones").require("zones");
+const availabilityZones = configValue.split(',');
+const numOfSubnets = parseInt(numOfSubnet);
 require('dotenv').config();
 
 // Access environment variables
-const region = process.env.region;
-const my_availabilityZone = process.env.availabilityZones;
-const availabilityZones = my_availabilityZone.split(',');
-const numPublicSubnets = parseInt(process.env.numPublicSubnets);
-const numPrivateSubnets = parseInt(process.env.numPrivateSubnets);
-const VPC_CIDR_prefix = process.env.VPC_CIDR_prefix;
-const VPC_name = process.env.VPC_name;
-const subnet_public_name = process.env.subnet_public_name;
-const subnet_private_name = process.env.subnet_private_name;
-const public_route_table = process.env.public_route_table;
-const private_route_table = process.env.private_route_table;
-const public_subnetconnect = process.env.public_subnetconnect;
-const private_subnetconnect = process.env.private_subnetconnect;
-const internet_gateway = process.env.internet_gateway;
-const public_route = process.env.public_route;
-const public_route_cidr_des = process.env.public_route_cidr_des;
 
 // Create a VPC
-const main = new aws.ec2.Vpc(VPC_name, {
-    cidrBlock: VPC_CIDR_prefix,
+const main = new aws.ec2.Vpc("Pulumi_01", {
+    cidrBlock: vpcCIDRBlock,
     instanceTenancy: "default",
     tags: {
-        Name: VPC_name,
+        Name: "Pulumi_01",
     },
 });
 
@@ -36,9 +27,9 @@ const publicSubnets = [];
 const privateSubnets = [];
 
 // Create public and private subnets
-for (let i = 0; i < numPublicSubnets; i++) {
+for (let i = 0; i < numOfSubnets; i++) {
     let x = i+1;
-    const subnetName = subnet_public_name + x ;
+    const subnetName = "subnet_public_name" + x ;
 
     const subnet = new aws.ec2.Subnet(subnetName, {
         vpcId: main.id,
@@ -53,14 +44,14 @@ for (let i = 0; i < numPublicSubnets; i++) {
     publicSubnets.push(subnet);
 }
 
-for (let i = 0; i < numPrivateSubnets; i++) {
+for (let i = 0; i < numOfSubnets; i++) {
     let x = i+1;
-    const subnetName = subnet_private_name + x;
+    const subnetName = "subnet_private_name" + x;
 
     const subnet = new aws.ec2.Subnet(subnetName, {
         vpcId: main.id,
         availabilityZone: region + availabilityZones[i % availabilityZones.length], // Rotate AZs
-        cidrBlock: `10.0.${numPublicSubnets + i + 1}.0/24`,
+        cidrBlock: `10.0.${numOfSubnets + i + 1}.0/24`,
         tags: {
             Name: subnetName,
         },
@@ -70,17 +61,17 @@ for (let i = 0; i < numPrivateSubnets; i++) {
 }
 
 // Create route tables
-const publicRouteTable = new aws.ec2.RouteTable(public_route_table, {
+const publicRouteTable = new aws.ec2.RouteTable("public_route_table", {
     vpcId: main.id,
     tags: {
-        Name: public_route_table,
+        Name: "public_route_table",
     },
 });
 
-const privateRouteTable = new aws.ec2.RouteTable(private_route_table, {
+const privateRouteTable = new aws.ec2.RouteTable("private_route_table", {
     vpcId: main.id,
     tags: {
-        Name: private_route_table,
+        Name: "private_route_table",
     },
 });
 
@@ -88,9 +79,9 @@ const publicRouteTableAssociations = [];
 const privateRouteTableAssociations = [];
 
 // Associate public subnets with the public route table
-for (let i = 0; i < numPublicSubnets; i++) {
+for (let i = 0; i < numOfSubnets; i++) {
     let x = i+1;
-    const association = new aws.ec2.RouteTableAssociation(public_subnetconnect+x, {
+    const association = new aws.ec2.RouteTableAssociation("public_subnetconnect"+x, {
         subnetId: publicSubnets[i].id,
         routeTableId: publicRouteTable.id,
     });
@@ -99,9 +90,9 @@ for (let i = 0; i < numPublicSubnets; i++) {
 }
 
 // Associate private subnets with the private route table
-for (let i = 0; i < numPrivateSubnets; i++) {
+for (let i = 0; i < numOfSubnets; i++) {
     let x = i+1;
-    const association = new aws.ec2.RouteTableAssociation(private_subnetconnect+x, {
+    const association = new aws.ec2.RouteTableAssociation("private_subnetconnect"+x, {
         subnetId: privateSubnets[i].id,
         routeTableId: privateRouteTable.id,
     });
@@ -110,17 +101,17 @@ for (let i = 0; i < numPrivateSubnets; i++) {
 }
 
 // Create an Internet Gateway
-const internetGateway = new aws.ec2.InternetGateway(internet_gateway, {
+const internetGateway = new aws.ec2.InternetGateway("internet_gateway", {
     vpcId: main.id,
     tags: {
-        Name: internet_gateway,
+        Name: "internet_gateway",
     },
 });
 
 // Create a public route in the public route table
-const publicRoute = new aws.ec2.Route(public_route, {
+const publicRoute = new aws.ec2.Route("public_route", {
     routeTableId: publicRouteTable.id,
-    destinationCidrBlock: public_route_cidr_des,
+    destinationCidrBlock: publicRouteTableCIDRBlock,
     gatewayId: internetGateway.id,
 });
 
@@ -179,8 +170,16 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("appSecurityGroup", {
 
             cidrBlocks: ["0.0.0.0/0"],
 
-        }
+        },
 
+    ],
+    egress: [
+        {
+            fromPort: 0,
+            toPort: 0,
+            protocol: "-1",
+            cidrBlocks: ["0.0.0.0/0"],
+        }
     ],
 
     tags: {
@@ -191,11 +190,81 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("appSecurityGroup", {
 
 });
 
+
+const dbSecurityGroup = new aws.ec2.SecurityGroup("dbSecurityGroup", {
+
+    vpcId: main.id,
+
+    ingress: [
+
+        {
+
+            fromPort: 3306,
+
+            toPort: 3306,
+
+            protocol: "tcp",
+
+            securityGroups: [appSecurityGroup.id], // Allow SSH from anywhere
+
+        },
+
+    ],
+    egress: [
+        {
+            fromPort: 3306,
+            toPort: 3306,
+            protocol: "tcp",
+            securityGroups: [appSecurityGroup.id],
+        }
+    ],
+
+    tags: {
+
+        Name: "dbSecurityGroup",
+
+    },
+
+});
+
+
+const dbSubnetGroup = new aws.rds.SubnetGroup("mydbsubnetgroup", {
+    subnetIds: [privateSubnets[0].id, privateSubnets[1].id], // Replace with your subnet IDs
+    dbSubnetGroupDescription: "My DB Subnet Group",
+    tags: {
+        Name: "mydbsubnetgroup",
+    },
+});
+
+const rdsInstance = new aws.rds.Instance("myrdsinstance", {
+    dbName: "csye6225",
+    identifier: "csye6225",
+    allocatedStorage: 20,             // The storage capacity for the RDS instance
+    storageType: "gp2",               // General Purpose (SSD)
+    engine: "mysql",                 // The database engine (e.g., MySQL, PostgreSQL, etc.)
+    //engineVersion: "5.7",            // Engine version
+    instanceClass: "db.t2.micro",    // RDS instance type
+    username: "csye6225",             // Database master username
+    password: "Yuvarajmy#143",     // Database master password
+    skipFinalSnapshot: true,         // Do not create a final DB snapshot when the instance is deleted
+    publiclyAccessible: false,       // RDS instance is not publicly accessible
+    multiAz: false,                  // Multi-AZ deployment (true for high availability)
+    vpcSecurityGroupIds: [dbSecurityGroup.id], // Add security group IDs to control access
+    dbSubnetGroupName: dbSubnetGroup.id, // Name of the DB subnet group (create one if it doesn't exist)
+    parameterGroupName: "csye6225",
+});
+
+const rdsHost = rdsInstance.endpoint.apply(endpoint => {
+    return endpoint.split(":")[0];
+});
+
+
+
 const ec2Instance = new aws.ec2.Instance("ec2Instance", {
 
     instanceType: "t2.micro", // Set the desired instance type
 
-    ami: "ami-01f68517d258955e9", // Replace with your custom AMI ID
+    ami: "ami-04ad682997a4552f5", // Replace with your custom AMI ID
 
     vpcSecurityGroupIds: [appSecurityGroup.id],
 
@@ -212,6 +281,45 @@ const ec2Instance = new aws.ec2.Instance("ec2Instance", {
         volumeType: "gp2",
 
     },
+    userData: pulumi.interpolate`#!/bin/bash
+    
+    # Create the .env file inside the /opt/example folder
+    echo "PORT=3000" >> /opt/webapp/.env
+    echo "DB_HOST=${rdsHost}" >> /opt/webapp/.env
+    echo "DB_PORT=3306" >> /opt/webapp/.env
+    echo "DB_DATABASE=csye6225" >> /opt/webapp/.env
+    echo "DB_USER=admin" >> /opt/webapp/.env
+    echo "DB_PASSWORD=Admin@143" >> /opt/webapp/.env
+    
+    # Add the MySQL commands
+    sudo mysql -u csye6225 -h ${rdsHost} -p"Yuvarajmy#143" -e "CREATE USER 'admin'@'%' IDENTIFIED BY 'Admin@143';"
+    sudo mysql -u csye6225 -h ${rdsHost} -p"Yuvarajmy#143" -e "GRANT ALL PRIVILEGES ON csye6225.* TO 'admin'@'%' WITH GRANT OPTION;"
+    sudo mysql -u csye6225 -h ${rdsHost} -p"Yuvarajmy#143" -e "FLUSH PRIVILEGES;"
+
+    sudo chown csye6225:csye6225 /opt/webapp
+    sudo chmod 770 /opt/webapp
+
+    #Creating a systemd file
+    sudo echo "[Unit]
+    Description=Webapp Service
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=csye6225
+    Group=csye6225
+    WorkingDirectory=/opt/webapp
+    ExecStart=/usr/bin/node /opt/webapp/index.js
+    Restart=always
+    RestartSec=3
+
+    [Install]
+    WantedBy=multi-user.target" > /etc/systemd/system/webapp.service
+
+    # Reload systemd and start the webapp service
+    sudo systemctl daemon-reload
+    sudo systemctl start webapp.service
+    sudo systemctl enable webapp.service`,
 
     tags: {
 
