@@ -4,6 +4,5 @@ config:
   aws:config:profile: yuvaraj-dev
   my_vpc:cidrBlock: "10.0.0.0/16"
   my_publicRouteTable:cidrBlock: "0.0.0.0/0"
-  numOfSubnets:number: 3
-  availabilityZones:zones: "a,b,c"
-  
+  AMIID:AMIID: "ami-059a8337b2440c03d"
+  DomainName:DomainName: "dev.yuvarajmy.me"
