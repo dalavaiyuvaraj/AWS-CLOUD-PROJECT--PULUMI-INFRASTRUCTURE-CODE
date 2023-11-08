@@ -5,11 +5,8 @@ const awsx = require("@pulumi/awsx");
 
 const vpcCIDRBlock = new pulumi.Config("my_vpc").require("cidrBlock");
 const publicRouteTableCIDRBlock = new pulumi.Config("my_publicRouteTable").require("cidrBlock");
-const numOfSubnet = new pulumi.Config("numOfSubnets").require("number");
-const region = new pulumi.Config("aws").require("region");
-const configValue = new pulumi.Config("availabilityZones").require("zones");
-const availabilityZones = configValue.split(',');
-const numOfSubnets = parseInt(numOfSubnet);
+const Ami_ID = new pulumi.Config("AMIID").require("AMIID");
+const DomainName = new pulumi.Config("DomainName").require("DomainName");
 require('dotenv').config();
 
 // Access environment variables
@@ -23,42 +20,46 @@ const main = new aws.ec2.Vpc("Pulumi_01", {
     },
 });
 
+
+// Function for AWS availability zones
+const getAvailableAvailabilityZones = async () => {
+    const zones = await aws.getAvailabilityZones({ state: "available" });
+    const i = Math.min(zones.names.length, 3);
+    console.log('zones now: ', i);
+    return zones.names.slice(0, i);
+};
+
 const publicSubnets = [];
 const privateSubnets = [];
 
-// Create public and private subnets
-for (let i = 0; i < numOfSubnets; i++) {
-    let x = i+1;
-    const subnetName = "subnet_public_name" + x ;
+// availability zones
+const createSubnets = async () => {
+    const availabilityZones = await getAvailableAvailabilityZones();
+    for (let i = 0; i < availabilityZones.length; i++) {
 
-    const subnet = new aws.ec2.Subnet(subnetName, {
-        vpcId: main.id,
-        availabilityZone: region + availabilityZones[i % availabilityZones.length], // Rotate AZs
-        cidrBlock: `10.0.${i + 1}.0/24`,
-        mapPublicIpOnLaunch: true,
-        tags: {
-            Name: subnetName,
-        },
-    });
+        // Create public subnet
+        const publicSubnet = new aws.ec2.Subnet(`subnet_public_name${i + 1}`, {
+            vpcId: main.id,
+            availabilityZone: availabilityZones[i],
+            cidrBlock: `10.0.${i + 1}.0/24`,
+            mapPublicIpOnLaunch: true,
+            tags: {
+                Name: `subnet_public_name${i + 1}`,
+            },
+        });
+        publicSubnets.push(publicSubnet);
 
-    publicSubnets.push(subnet);
-}
-
-for (let i = 0; i < numOfSubnets; i++) {
-    let x = i+1;
-    const subnetName = "subnet_private_name" + x;
-
-    const subnet = new aws.ec2.Subnet(subnetName, {
-        vpcId: main.id,
-        availabilityZone: region + availabilityZones[i % availabilityZones.length], // Rotate AZs
-        cidrBlock: `10.0.${numOfSubnets + i + 1}.0/24`,
-        tags: {
-            Name: subnetName,
-        },
-    });
-
-    privateSubnets.push(subnet);
-}
+        // Create private subnet
+        const privateSubnet = new aws.ec2.Subnet(`subnet_private_name${i + 1}`, {
+            vpcId: main.id,
+            availabilityZone: availabilityZones[i],
+            cidrBlock: `10.0.${availabilityZones.length + i + 1}.0/24`,
+            tags: {
+                Name: `subnet_private_name${i + 1}`,
+            },
+        });
+        privateSubnets.push(privateSubnet);
+    }
 
 // Create route tables
 const publicRouteTable = new aws.ec2.RouteTable("public_route_table", {
@@ -79,7 +80,7 @@ const publicRouteTableAssociations = [];
 const privateRouteTableAssociations = [];
 
 // Associate public subnets with the public route table
-for (let i = 0; i < numOfSubnets; i++) {
+for (let i = 0; i < availabilityZones.length; i++) {
     let x = i+1;
     const association = new aws.ec2.RouteTableAssociation("public_subnetconnect"+x, {
         subnetId: publicSubnets[i].id,
@@ -90,7 +91,7 @@ for (let i = 0; i < numOfSubnets; i++) {
 }
 
 // Associate private subnets with the private route table
-for (let i = 0; i < numOfSubnets; i++) {
+for (let i = 0; i < availabilityZones.length; i++) {
     let x = i+1;
     const association = new aws.ec2.RouteTableAssociation("private_subnetconnect"+x, {
         subnetId: privateSubnets[i].id,
@@ -108,12 +109,18 @@ const internetGateway = new aws.ec2.InternetGateway("internet_gateway", {
     },
 });
 
+
+
+
+
 // Create a public route in the public route table
 const publicRoute = new aws.ec2.Route("public_route", {
     routeTableId: publicRouteTable.id,
     destinationCidrBlock: publicRouteTableCIDRBlock,
     gatewayId: internetGateway.id,
 });
+
+
 
 
 const appSecurityGroup = new aws.ec2.SecurityGroup("appSecurityGroup", {
@@ -236,22 +243,42 @@ const dbSubnetGroup = new aws.rds.SubnetGroup("mydbsubnetgroup", {
     },
 });
 
+// Create an RDS parameter group
+const rdsParameterGroup = new aws.rds.ParameterGroup("myRdsParameterGroup", {
+    vpcId: main.id,
+    family: "mariadb10.6", // Change this to match your database engine and version
+    name: "my-rds-parameter-group",
+    parameters: [
+        {
+            name: "character_set_server",
+            value: "utf8",
+        },
+        {
+            name: "collation_server",
+            value: "utf8_general_ci",
+        },
+    ],
+    tags: {
+        Name: "myRdsParameterGroup",
+    },
+});
+
 const rdsInstance = new aws.rds.Instance("myrdsinstance", {
     dbName: "csye6225",
     identifier: "csye6225",
     allocatedStorage: 20,             // The storage capacity for the RDS instance
     storageType: "gp2",               // General Purpose (SSD)
-    engine: "mysql",                 // The database engine (e.g., MySQL, PostgreSQL, etc.)
+    engine: "mariadb",                 // The database engine (e.g., MySQL, PostgreSQL, etc.)
     //engineVersion: "5.7",            // Engine version
     instanceClass: "db.t2.micro",    // RDS instance type
-    username: "csye6225",             // Database master username
-    password: "Yuvarajmy#143",     // Database master password
+    username: "yuvaraj123",             // Database master username
+    password: "Yuvarajmy143",     // Database master password
     skipFinalSnapshot: true,         // Do not create a final DB snapshot when the instance is deleted
     publiclyAccessible: false,       // RDS instance is not publicly accessible
     multiAz: false,                  // Multi-AZ deployment (true for high availability)
     vpcSecurityGroupIds: [dbSecurityGroup.id], // Add security group IDs to control access
     dbSubnetGroupName: dbSubnetGroup.id, // Name of the DB subnet group (create one if it doesn't exist)
-    parameterGroupName: "csye6225",
+    parameterGroupName: rdsParameterGroup.name,
 });
 
 const rdsHost = rdsInstance.endpoint.apply(endpoint => {
@@ -260,11 +287,66 @@ const rdsHost = rdsInstance.endpoint.apply(endpoint => {
 
 
 
-const ec2Instance = new aws.ec2.Instance("ec2Instance", {
+
+
+const cloudWatchAgentRole = new aws.iam.Role("cloudWatchAgentRole", {
+    assumeRolePolicy: JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Action: "sts:AssumeRole",
+          Principal: {
+            Service: "ec2.amazonaws.com"
+          },
+          Effect: "Allow",
+        },
+      ],
+    }),
+  });
+
+  const cloudWatchAgentPolicy = new aws.iam.Policy("cloudWatchAgentPolicy", {
+    description: "Policy for CloudWatch Agent",
+    policy: {
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Action: [
+            "cloudwatch:PutMetricData",
+            "ec2:DescribeVolumes",
+            "ec2:DescribeTags",
+            "logs:PutLogEvents",
+            "logs:DescribeLogStreams",
+            "logs:DescribeLogGroups",
+            "logs:CreateLogStream",
+            "logs:CreateLogGroup",
+          ],
+          Effect: "Allow",
+          Resource: "*",
+        },
+        {
+          Action: ["ssm:GetParameter"],
+          Effect: "Allow",
+          Resource: "arn:aws:ssm:*:*:parameter/AmazonCloudWatch-*",
+        },
+      ],
+    },
+  });
+
+const cloudWatchAgentRolePolicyAttachment = new aws.iam.RolePolicyAttachment(
+    "cloudWatchAgentRolePolicyAttachment",
+    {
+      policyArn: cloudWatchAgentPolicy.arn,
+      role: cloudWatchAgentRole.name,
+    }
+  );
+
+const RoleProfile = new aws.iam.InstanceProfile("RoleProfile", {role: cloudWatchAgentRole.name});
+
+  const ec2Instance = new aws.ec2.Instance("ec2Instance", {
 
     instanceType: "t2.micro", // Set the desired instance type
 
-    ami: "ami-04ad682997a4552f5", // Replace with your custom AMI ID
+    ami: Ami_ID, // Replace with your custom AMI ID
 
     vpcSecurityGroupIds: [appSecurityGroup.id],
 
@@ -273,6 +355,8 @@ const ec2Instance = new aws.ec2.Instance("ec2Instance", {
     vpcId: main.id,
 
     keyName: "EC2Instance_keypair",
+
+    iamInstanceProfile:RoleProfile,
 
     rootBlockDevice: {
 
@@ -284,42 +368,20 @@ const ec2Instance = new aws.ec2.Instance("ec2Instance", {
     userData: pulumi.interpolate`#!/bin/bash
     
     # Create the .env file inside the /opt/example folder
-    echo "PORT=3000" >> /opt/webapp/.env
-    echo "DB_HOST=${rdsHost}" >> /opt/webapp/.env
-    echo "DB_PORT=3306" >> /opt/webapp/.env
-    echo "DB_DATABASE=csye6225" >> /opt/webapp/.env
-    echo "DB_USER=admin" >> /opt/webapp/.env
-    echo "DB_PASSWORD=Admin@143" >> /opt/webapp/.env
-    
-    # Add the MySQL commands
-    sudo mysql -u csye6225 -h ${rdsHost} -p"Yuvarajmy#143" -e "CREATE USER 'admin'@'%' IDENTIFIED BY 'Admin@143';"
-    sudo mysql -u csye6225 -h ${rdsHost} -p"Yuvarajmy#143" -e "GRANT ALL PRIVILEGES ON csye6225.* TO 'admin'@'%' WITH GRANT OPTION;"
-    sudo mysql -u csye6225 -h ${rdsHost} -p"Yuvarajmy#143" -e "FLUSH PRIVILEGES;"
+    sudo sh -c 'echo "PORT=3000" >> /opt/csye6225/webapp/.env'
+    sudo sh -c 'echo "DB_HOST=${rdsHost}" >> /opt/csye6225/webapp/.env'
+    sudo sh -c 'echo "DB_PORT=3306" >> /opt/csye6225/webapp/.env'
+    sudo sh -c 'echo "DB_DATABASE=${rdsInstance.dbName}" >> /opt/csye6225/webapp/.env'
+    sudo sh -c 'echo "DB_USER=${rdsInstance.username}" >> /opt/csye6225/webapp/.env'
+    sudo sh -c 'echo "DB_PASSWORD=${rdsInstance.password}" >> /opt/csye6225/webapp/.env'
 
-    sudo chown csye6225:csye6225 /opt/webapp
-    sudo chmod 770 /opt/webapp
 
-    #Creating a systemd file
-    sudo echo "[Unit]
-    Description=Webapp Service
-    After=network.target
-
-    [Service]
-    Type=simple
-    User=csye6225
-    Group=csye6225
-    WorkingDirectory=/opt/webapp
-    ExecStart=/usr/bin/node /opt/webapp/index.js
-    Restart=always
-    RestartSec=3
-
-    [Install]
-    WantedBy=multi-user.target" > /etc/systemd/system/webapp.service
-
-    # Reload systemd and start the webapp service
-    sudo systemctl daemon-reload
-    sudo systemctl start webapp.service
-    sudo systemctl enable webapp.service`,
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -c file:/opt/aws/amazon-cloudwatch-agent/bin/cloudwatch-config.json \
+    -s
+    `,
 
     tags: {
 
@@ -328,4 +390,38 @@ const ec2Instance = new aws.ec2.Instance("ec2Instance", {
     },
 
 });
+  
+
+// Function to create Route53 DNS A record
+const createDnsARecord = async (domainName, ec2Instance) => {
+    const hostedZone = await aws.route53.getZone({
+        name: domainName,
+    });
+ 
+    if (hostedZone) {
+        const recordName = domainName;
+        const recordType = "A";
+        const recordTtl = 60;
+        const recordSet = new aws.route53.Record(`dnsARecord-${recordName}`, {
+            name: recordName,
+            type: recordType,
+            zoneId: hostedZone.zoneId,
+            records: [ec2Instance.publicIp],
+            ttl: recordTtl,
+            allowOverwrite: true,
+        });
+    }
+    else
+    {
+        console.error(`Zone for domain '${domainName}' not found.`);
+    }
+};
+ 
+// Call the function to create DNS A record
+createDnsARecord(DomainName, ec2Instance);
+
+
+};
+
+createSubnets();
 

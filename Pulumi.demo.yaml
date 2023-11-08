@@ -1,8 +1,8 @@
-encryptionsalt: v1:KpbGaTREO9k=:v1:7Aej6IOJLjDPtALL:3BaRQe3dPLD5H4EfGHfAM4+kWKsyww==
+encryptionsalt: v1:OrMoWDPjF88=:v1:UGIIDHxezH9WSl+8:vleF7jAG59ETtdDzWWpbWsjHPZ1how==
 config:
   aws:region: us-east-1
   aws:config:profile: demo
   my_vpc:cidrBlock: "10.0.0.0/16"
   my_publicRouteTable:cidrBlock: "0.0.0.0/0"
-  numOfSubnets:number: 3
-  availabilityZones:zones: "a,b,c"
+  AMIID:AMIID: "ami-059a8337b2440c03d"
+  DomainName:DomainName: "demo.yuvarajmy.me"
