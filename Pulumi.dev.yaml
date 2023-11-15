@@ -4,5 +4,6 @@ config:
   aws:config:profile: yuvaraj-dev
   my_vpc:cidrBlock: "10.0.0.0/16"
   my_publicRouteTable:cidrBlock: "0.0.0.0/0"
-  AMIID:AMIID: "ami-059a8337b2440c03d"
+  AMIID:AMIID: "ami-0bca40982e20c8476"
   DomainName:DomainName: "dev.yuvarajmy.me"
+  KeyPair:KeyPair: "EC2Instance_keypair"

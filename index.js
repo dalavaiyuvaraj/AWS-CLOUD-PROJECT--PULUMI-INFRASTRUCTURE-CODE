@@ -7,6 +7,7 @@ const vpcCIDRBlock = new pulumi.Config("my_vpc").require("cidrBlock");
 const publicRouteTableCIDRBlock = new pulumi.Config("my_publicRouteTable").require("cidrBlock");
 const Ami_ID = new pulumi.Config("AMIID").require("AMIID");
 const DomainName = new pulumi.Config("DomainName").require("DomainName");
+const KeyPair = new pulumi.Config("KeyPair").require("KeyPair");
 require('dotenv').config();
 
 // Access environment variables
@@ -33,7 +34,7 @@ const publicSubnets = [];
 const privateSubnets = [];
 
 // availability zones
-const createSubnets = async () => {
+const CreateInfra = async () => {
     const availabilityZones = await getAvailableAvailabilityZones();
     for (let i = 0; i < availabilityZones.length; i++) {
 
@@ -120,7 +121,34 @@ const publicRoute = new aws.ec2.Route("public_route", {
     gatewayId: internetGateway.id,
 });
 
-
+const LoadBalancerSecurityGroup = new aws.ec2.SecurityGroup("LoadBalancerSecurityGroup", {
+    vpcId: main.id,
+    ingress: [
+        {
+            fromPort: 80,
+            toPort: 80,
+            protocol: "tcp",
+            cidrBlocks: ["0.0.0.0/0"],
+        },
+        {
+            fromPort: 443,
+            toPort: 443,
+            protocol: "tcp",
+            cidrBlocks: ["0.0.0.0/0"],
+        },
+    ],
+    egress: [
+        {
+            fromPort: 0,
+            toPort: 0,
+            protocol: "-1",
+            cidrBlocks: ["0.0.0.0/0"],
+        },
+    ],
+    tags: {
+        Name: "LoadBalancerSecurityGroup",
+    },
+});
 
 
 const appSecurityGroup = new aws.ec2.SecurityGroup("appSecurityGroup", {
@@ -137,33 +165,33 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("appSecurityGroup", {
 
             protocol: "tcp",
 
-            cidrBlocks: ["0.0.0.0/0"], // Allow SSH from anywhere
+            cidrBlocks: ["0.0.0.0/0"],
 
         },
 
-        {
+        // {
 
-            fromPort: 80,
+        //     fromPort: 80,
 
-            toPort: 80,
+        //     toPort: 80,
 
-            protocol: "tcp",
+        //     protocol: "tcp",
 
-            cidrBlocks: ["0.0.0.0/0"], // Allow HTTP from anywhere
+        //     cidrBlocks: ["0.0.0.0/0"], // Allow HTTP from anywhere
 
-        },
+        // },
 
-        {
+        // {
 
-            fromPort: 443,
+        //     fromPort: 443,
 
-            toPort: 443,
+        //     toPort: 443,
 
-            protocol: "tcp",
+        //     protocol: "tcp",
 
-            cidrBlocks: ["0.0.0.0/0"], // Allow HTTPS from anywhere
+        //     cidrBlocks: ["0.0.0.0/0"], // Allow HTTPS from anywhere
 
-        },
+        // },
 
         // Add ingress rule for your application port here
 
@@ -175,7 +203,7 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("appSecurityGroup", {
 
             protocol: "tcp",
 
-            cidrBlocks: ["0.0.0.0/0"],
+            securityGroups: [LoadBalancerSecurityGroup.id],
 
         },
 
@@ -235,6 +263,9 @@ const dbSecurityGroup = new aws.ec2.SecurityGroup("dbSecurityGroup", {
 });
 
 
+
+
+
 const dbSubnetGroup = new aws.rds.SubnetGroup("mydbsubnetgroup", {
     subnetIds: [privateSubnets[0].id, privateSubnets[1].id], // Replace with your subnet IDs
     dbSubnetGroupDescription: "My DB Subnet Group",
@@ -279,6 +310,7 @@ const rdsInstance = new aws.rds.Instance("myrdsinstance", {
     vpcSecurityGroupIds: [dbSecurityGroup.id], // Add security group IDs to control access
     dbSubnetGroupName: dbSubnetGroup.id, // Name of the DB subnet group (create one if it doesn't exist)
     parameterGroupName: rdsParameterGroup.name,
+    protect: true,
 });
 
 const rdsHost = rdsInstance.endpoint.apply(endpoint => {
@@ -304,96 +336,77 @@ const cloudWatchAgentRole = new aws.iam.Role("cloudWatchAgentRole", {
     }),
   });
 
-  const cloudWatchAgentPolicy = new aws.iam.Policy("cloudWatchAgentPolicy", {
-    description: "Policy for CloudWatch Agent",
-    policy: {
-      Version: "2012-10-17",
-      Statement: [
-        {
-          Action: [
-            "cloudwatch:PutMetricData",
-            "ec2:DescribeVolumes",
-            "ec2:DescribeTags",
-            "logs:PutLogEvents",
-            "logs:DescribeLogStreams",
-            "logs:DescribeLogGroups",
-            "logs:CreateLogStream",
-            "logs:CreateLogGroup",
-          ],
-          Effect: "Allow",
-          Resource: "*",
-        },
-        {
-          Action: ["ssm:GetParameter"],
-          Effect: "Allow",
-          Resource: "arn:aws:ssm:*:*:parameter/AmazonCloudWatch-*",
-        },
-      ],
-    },
-  });
 
 const cloudWatchAgentRolePolicyAttachment = new aws.iam.RolePolicyAttachment(
     "cloudWatchAgentRolePolicyAttachment",
     {
-      policyArn: cloudWatchAgentPolicy.arn,
+      policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
       role: cloudWatchAgentRole.name,
     }
   );
 
 const RoleProfile = new aws.iam.InstanceProfile("RoleProfile", {role: cloudWatchAgentRole.name});
 
-  const ec2Instance = new aws.ec2.Instance("ec2Instance", {
+// const ec2Instance = new aws.ec2.Instance("ec2Instance", {
 
-    instanceType: "t2.micro", // Set the desired instance type
+//     instanceType: "t2.micro", // Set the desired instance type
 
-    ami: Ami_ID, // Replace with your custom AMI ID
+//     ami: Ami_ID, // Replace with your custom AMI ID
 
-    vpcSecurityGroupIds: [appSecurityGroup.id],
+//     vpcSecurityGroupIds: [appSecurityGroup.id],
 
-    subnetId: publicSubnets[0].id, // Choose one of your public subnets
+//     subnetId: publicSubnets[0].id, // Choose one of your public subnets
 
-    vpcId: main.id,
+//     vpcId: main.id,
 
-    keyName: "EC2Instance_keypair",
+//     keyName: "EC2Instance_keypair",
 
-    iamInstanceProfile:RoleProfile,
+//     iamInstanceProfile:RoleProfile,
 
-    rootBlockDevice: {
+//     rootBlockDevice: {
 
-        volumeSize: 25,
+//         volumeSize: 25,
 
-        volumeType: "gp2",
+//         volumeType: "gp2",
 
-    },
-    userData: pulumi.interpolate`#!/bin/bash
+//     },
+//     userData: pulumi.interpolate`#!/bin/bash
     
-    # Create the .env file inside the /opt/example folder
-    sudo sh -c 'echo "PORT=3000" >> /opt/csye6225/webapp/.env'
-    sudo sh -c 'echo "DB_HOST=${rdsHost}" >> /opt/csye6225/webapp/.env'
-    sudo sh -c 'echo "DB_PORT=3306" >> /opt/csye6225/webapp/.env'
-    sudo sh -c 'echo "DB_DATABASE=${rdsInstance.dbName}" >> /opt/csye6225/webapp/.env'
-    sudo sh -c 'echo "DB_USER=${rdsInstance.username}" >> /opt/csye6225/webapp/.env'
-    sudo sh -c 'echo "DB_PASSWORD=${rdsInstance.password}" >> /opt/csye6225/webapp/.env'
+//     # Create the .env file inside the /opt/example folder
+//     sudo sh -c 'echo "PORT=3000" >> /opt/csye6225/webapp/.env'
+//     sudo sh -c 'echo "DB_HOST=${rdsHost}" >> /opt/csye6225/webapp/.env'
+//     sudo sh -c 'echo "DB_PORT=3306" >> /opt/csye6225/webapp/.env'
+//     sudo sh -c 'echo "DB_DATABASE=${rdsInstance.dbName}" >> /opt/csye6225/webapp/.env'
+//     sudo sh -c 'echo "DB_USER=${rdsInstance.username}" >> /opt/csye6225/webapp/.env'
+//     sudo sh -c 'echo "DB_PASSWORD=${rdsInstance.password}" >> /opt/csye6225/webapp/.env'
 
 
-    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
-    -a fetch-config \
-    -m ec2 \
-    -c file:/opt/aws/amazon-cloudwatch-agent/bin/cloudwatch-config.json \
-    -s
-    `,
+//     sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+//     -a fetch-config \
+//     -m ec2 \
+//     -c file:/opt/aws/amazon-cloudwatch-agent/bin/cloudwatch-config.json \
+//     -s
+//     `,
 
-    tags: {
+//     tags: {
 
-        Name: "EC2Instance",
+//         Name: "EC2Instance",
 
-    },
+//     },
 
+// });
+
+const LoadBalancer = new aws.lb.LoadBalancer("WebAPPLoadBalancer", {
+    internal: false,
+    loadBalancerType: "application",
+    securityGroups: [LoadBalancerSecurityGroup.id],
+    subnets: publicSubnets.map(subnet => (subnet.id)),
+    enableDeletionProtection: true,
 });
   
 
 // Function to create Route53 DNS A record
-const createDnsARecord = async (domainName, ec2Instance) => {
+const createDnsARecord = async (domainName) => {
     const hostedZone = await aws.route53.getZone({
         name: domainName,
     });
@@ -406,9 +419,14 @@ const createDnsARecord = async (domainName, ec2Instance) => {
             name: recordName,
             type: recordType,
             zoneId: hostedZone.zoneId,
-            records: [ec2Instance.publicIp],
-            ttl: recordTtl,
-            allowOverwrite: true,
+            aliases:[{
+                name:LoadBalancer.dnsName,
+                zoneId:LoadBalancer.zoneId,
+                evaluateTargetHealth: true,
+            }],
+            // records: [ec2Instance.publicIp],
+            // ttl: recordTtl,
+            // allowOverwrite: true,
         });
     }
     else
@@ -418,10 +436,162 @@ const createDnsARecord = async (domainName, ec2Instance) => {
 };
  
 // Call the function to create DNS A record
-createDnsARecord(DomainName, ec2Instance);
+createDnsARecord(DomainName);
+
+const UserdataScript = pulumi.interpolate `#!/bin/bash
+    
+# Create the .env file inside the /opt/example folder
+sudo sh -c 'echo "PORT=3000" >> /opt/csye6225/webapp/.env'
+sudo sh -c 'echo "DB_HOST=${rdsHost}" >> /opt/csye6225/webapp/.env'
+sudo sh -c 'echo "DB_PORT=3306" >> /opt/csye6225/webapp/.env'
+sudo sh -c 'echo "DB_DATABASE=${rdsInstance.dbName}" >> /opt/csye6225/webapp/.env'
+sudo sh -c 'echo "DB_USER=${rdsInstance.username}" >> /opt/csye6225/webapp/.env'
+sudo sh -c 'echo "DB_PASSWORD=${rdsInstance.password}" >> /opt/csye6225/webapp/.env'
+
+
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+-a fetch-config \
+-m ec2 \
+-c file:/opt/aws/amazon-cloudwatch-agent/bin/cloudwatch-config.json \
+-s
+`;
+
+pulumi.log.info(
+    pulumi.interpolate`DB data: dbHostname, userDataScript - ${rdsHost}, ${UserdataScript}`
+);
+
+const encodedUserData = UserdataScript.apply(ud => Buffer.from(ud).toString('base64'));
+
+
+
+const asg_launch_config = new aws.ec2.LaunchTemplate("asg_launch_config", {
+    name: "myLaunchTemplate",
+    version: "$Latest",
+    imageId: Ami_ID,
+    instanceType: "t2.micro",
+    keyName: KeyPair,
+    vpcSecurityGroupIds: [appSecurityGroup.id],
+    iamInstanceProfile: {
+        name: RoleProfile
+    },
+    disableApiTermination: false,
+    ebsOptimized: false,
+    rootBlockDevice:
+        {
+            deleteOnTermination: true,
+            volumeSize: 20,
+            volumeType: "gp2",
+        },
+    userData: encodedUserData,
+    associatePublicIpAddress: true,
+    
+});
+
+// Create a Target Group for the Load Balancer
+const targetGroup = new aws.lb.TargetGroup("applicationTargetGroup", {
+    namePrefix: "tg-grp",
+    port: 3000,
+    protocol: "HTTP",
+    targetType: "instance",
+    vpcId: main.id,
+    healthCheck: {
+        path: "/healthz",
+        port: "traffic-port",
+        protocol: "HTTP",
+        interval: 30,
+        healthyThreshold: 2,
+        unhealthyThreshold: 2,
+        timeout: 5,
+    },
+});
+
+const webapp_autoscaling_group = new aws.autoscaling.Group("webapp_autoscaling_group", {
+    desiredCapacity: 1,
+    maxSize: 3,
+    minSize: 1,
+    launchTemplate: {
+        id: asg_launch_config.id,
+        version: "$Latest",
+    },
+    defaultCooldown: 60,
+    vpcZoneIdentifiers: [publicSubnets[0].id],
+    targetGroupArns: [targetGroup.arn],
+    tags:[
+        {
+        key: "Name",
+        value: "WEBAPP Instance",
+        propagateAtLaunch: true,
+        },
+    ]
+});
+
+// Autoscaling Policy - Scale Up
+const asg_scaleUpPolicy = new aws.autoscaling.Policy("asg_scaleUpPolicy", {
+    scalingAdjustment: 1,
+    autoscalingGroupName: webapp_autoscaling_group.name,
+    adjustmentType: "ChangeInCapacity",
+    cooldown: 60,
+});
+
+// Autoscaling Policy - Scale Down
+const asg_scaleDownPolicy = new aws.autoscaling.Policy("asg_scaleDownPolicy", {
+    scalingAdjustment: -1,
+    autoscalingGroupName: webapp_autoscaling_group.name,
+    adjustmentType: "ChangeInCapacity",
+    cooldown: 60,
+});
+
+// Alarm for Scale Up
+const alarmScaleUp = new aws.cloudwatch.MetricAlarm("alarmScaleUp", {
+    alarmDescription: "This metric monitors EC2 CPU utilization",
+    namespace: "AWS/EC2",
+    metricName: "CPUUtilization",
+    statistic: "Average",
+    threshold: 5,
+    comparisonOperator: "GreaterThanOrEqualToThreshold",
+    period: 120,
+    evaluationPeriods: 2,
+    dimensions: {
+        AutoScalingGroupName: webapp_autoscaling_group.name,
+    },
+    actionsEnabled: true,
+    alarmActions: [asg_scaleUpPolicy.arn],
+});
+
+// Alarm for Scale Down
+const alarmScaleDown = new aws.cloudwatch.MetricAlarm("alarmScaleDown", {
+    alarmDescription: "This metric monitors EC2 CPU utilization",
+    namespace: "AWS/EC2",
+    metricName: "CPUUtilization",
+    statistic: "Average",
+    threshold: 3,
+    comparisonOperator: "LessThanOrEqualToThreshold",
+    period: 120,
+    evaluationPeriods: 2,
+    dimensions: {
+        AutoScalingGroupName: webapp_autoscaling_group.name,
+    },
+    actionsEnabled: true,
+    alarmActions: [asg_scaleDownPolicy.arn],
+});
+
+
+
+
+
+// Create an Application Load Balancer Listener
+const listener = new aws.lb.Listener("applicationListener", {
+    loadBalancerArn: LoadBalancer.arn,
+    port: 80,
+    protocol: "HTTP",
+    defaultActions: [{
+        type: "forward",
+        targetGroupArn: targetGroup.arn,
+    }],
+});
 
 
 };
 
-createSubnets();
+CreateInfra();
 

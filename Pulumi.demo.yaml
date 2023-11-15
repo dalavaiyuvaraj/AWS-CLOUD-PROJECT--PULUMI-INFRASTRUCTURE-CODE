@@ -6,3 +6,4 @@ config:
   my_publicRouteTable:cidrBlock: "0.0.0.0/0"
   AMIID:AMIID: "ami-059a8337b2440c03d"
   DomainName:DomainName: "demo.yuvarajmy.me"
+  KeyPair:KeyPair: "EC2Instance_keypair_demo"
