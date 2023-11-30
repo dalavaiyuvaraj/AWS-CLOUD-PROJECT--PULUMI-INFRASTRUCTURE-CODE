@@ -8,7 +8,19 @@ const publicRouteTableCIDRBlock = new pulumi.Config("my_publicRouteTable").requi
 const Ami_ID = new pulumi.Config("AMIID").require("AMIID");
 const DomainName = new pulumi.Config("DomainName").require("DomainName");
 const KeyPair = new pulumi.Config("KeyPair").require("KeyPair");
+const gcp = require("@pulumi/gcp");
+const project = new pulumi.Config("gcp").require("project");
+const gcpregion = new pulumi.Config("gcp").require("region");
+const sourceEmail = new pulumi.Config("source").require("email");
+const region = new pulumi.Config("aws").require("region");
+const GithubPAT = new pulumi.Config("github").require("pat");
+const MailgunAPI = new pulumi.Config("mailgun").require("API");
+
 require('dotenv').config();
+
+
+// Create a new GCP resource stack
+
 
 // Access environment variables
 
@@ -318,6 +330,209 @@ const rdsHost = rdsInstance.endpoint.apply(endpoint => {
 });
 
 
+const dbHostname = pulumi.interpolate`${rdsInstance.address}`;
+ 
+    let serviceAccount = new gcp.serviceaccount.Account("myServiceAccount", {
+        accountId: "myserviceaccount123",
+        displayName: "My Service Account",
+    });
+ 
+    // Access keys for the Google Service account
+    let accessKeys = new gcp.serviceaccount.Key("myAccessKeys", {
+        serviceAccountId: serviceAccount.name,
+        //publicKeyType: "TYPE_X509_PEM_FILE",
+    });
+ 
+    // Grant storage permissions
+    let storageObjectCreatorRole = new gcp.projects.IAMMember("storageObjectCreator", {
+        project: project,
+        role: "roles/storage.objectCreator",
+        member: pulumi.interpolate`serviceAccount:${serviceAccount.email}`,
+    });
+ 
+    // Create an SNS topic
+    const mySNSTopic = new aws.sns.Topic("mySNSTopic", {
+        displayName: "My SNS Topic",
+        tags: {
+            Name: "mySNSTopic",
+        },
+    });
+ 
+    pulumi.log.info(
+        pulumi.interpolate`SNS Topic ARN: ${mySNSTopic.arn}`
+    );
+ 
+    const snsArn = mySNSTopic.arn;
+ 
+    const bucket = new gcp.storage.Bucket("my-bucket", {
+        cors: [{
+            maxAgeSeconds: 3600,
+            methods: [
+                "GET",
+                "HEAD",
+                "PUT",
+                "POST",
+                "DELETE",
+            ],
+            origins: ["http://demo.yuvarajmy.me"],
+            responseHeaders: ["*"],
+        }],
+        forceDestroy: true,
+        uniformBucketLevelAccess: true,
+        location: gcpregion,
+    },
+    );
+ 
+    const dynamoDb = new aws.dynamodb.Table("mytable", {
+        attributes: [
+            { name: "id", type: "S" },  // Unique identifier with UUID
+            { name: "email", type: "S" },
+            { name: "submissionURL", type: "S" },
+            { name: "gcsURL", type: "S" },
+            { name: "emailSentTime", type: "S" },
+            { name: "assignmentId", type: "S" },
+            { name: "accountId", type: "S" },
+            { name: "status", type: "S" }
+        ],
+        hashKey: "id", // Using Email as the hash key
+        readCapacity: 1,
+        writeCapacity: 1,
+        globalSecondaryIndexes: [
+            {
+                name: "EmailIndex",
+                hashKey: "email",
+                projectionType: "ALL",
+                readCapacity: 1,
+                writeCapacity: 1,
+            },
+            {
+                name: "SubmissionUrlIndex",
+                hashKey: "submissionURL",
+                projectionType: "ALL",
+                readCapacity: 1,
+                writeCapacity: 1,
+            },
+            {
+                name: "GcsUrlIndex",
+                hashKey: "gcsURL",
+                projectionType: "ALL",
+                readCapacity: 1,
+                writeCapacity: 1,
+            },
+            {
+                name: "EmailSentTimeIndex",
+                hashKey: "emailSentTime",
+                projectionType: "ALL",
+                readCapacity: 1,
+                writeCapacity: 1,
+            },
+            {
+                name: "AssignmentIdIndex",
+                hashKey: "assignmentId",
+                projectionType: "ALL",
+                readCapacity: 1,
+                writeCapacity: 1,
+            },
+            {
+                name: "AccountIdIndex",
+                hashKey: "accountId",
+                projectionType: "ALL",
+                readCapacity: 1,
+                writeCapacity: 1,
+            },
+            {
+                name: "StatusIndex",
+                hashKey: "status",
+                projectionType: "ALL",
+                readCapacity: 1,
+                writeCapacity: 1,
+            },
+        ]
+    });
+ 
+    let lambdaRole = new aws.iam.Role("lambdaRole", {
+        assumeRolePolicy: JSON.stringify({
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Action": "sts:AssumeRole",
+                    "Principal": { "Service": "lambda.amazonaws.com" },
+                    "Effect": "Allow",
+                }
+            ],
+        }),
+    });
+ 
+    let snsPublishPolicy = new aws.iam.RolePolicy("snsPublishPolicy", {
+        role: lambdaRole.id,
+        policy: pulumi.all([snsArn]).apply(([snsArn]) => JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+                {
+                    Effect: "Allow",
+                    Action: "sns:Publish",
+                    Resource: snsArn
+                }
+            ]
+        })),
+    },
+    {
+        dependsOn: mySNSTopic
+    });
+ 
+    let fullAccessToDynamoDb = new aws.iam.RolePolicyAttachment("fullAccessToDynamoDb", {
+        role: lambdaRole.name,
+        policyArn: "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess", // Delegate full access to the dynamoDB service
+    });
+ 
+    // Attach policies to Lambda IAM Role
+    const lambdaPolicy = new aws.iam.RolePolicyAttachment("lambdaPolicy", {
+        role: lambdaRole.name,
+        policyArn: "arn:aws:iam::aws:policy/AWSLambda_FullAccess",
+    });
+ 
+    // Attach lambda cloudwatch policy
+    const cloudwatchPolicy = new aws.iam.RolePolicyAttachment("logPolicy", {
+        role: lambdaRole.name,
+        policyArn: "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+    });
+ 
+    const lambdaFunction = new aws.lambda.Function("lambdaFunction", {
+        code: new pulumi.asset.FileArchive("/Users/yuvaraj_my/Desktop/serverless.zip"),
+        role: lambdaRole.arn,
+        handler: "serverless/index.handler",
+        runtime: "nodejs18.x",
+        timeout: 10,
+        environment: {
+            variables: {
+                "GCP_BUCKET_NAME": bucket.name,
+                "GCP_SERVICE_ACCOUNT_KEY": accessKeys.privateKey,
+                "GCP_PROJECT_ID": project,
+                "DYNAMODB_TABLE": dynamoDb.name,
+                "GITHUB_ACCESS_TOKEN": GithubPAT,
+                "MAILGUN_API_KEY": MailgunAPI,
+            },
+        },
+    });
+ 
+    const lambdaPermission = new aws.lambda.Permission("snsTopicPermission", {
+        action: "lambda:InvokeFunction",
+        function: lambdaFunction,
+        principal: "sns.amazonaws.com",
+        sourceArn: mySNSTopic.arn
+    });
+ 
+    // SNS topic subscription
+    let topicSubscription = new aws.sns.TopicSubscription("mySubscription", {
+        topic: snsArn,
+        endpoint: lambdaFunction.arn,
+        protocol: "lambda",
+    },
+    {
+        dependsOn: mySNSTopic
+    });
+
+
 
 
 
@@ -344,6 +559,7 @@ const cloudWatchAgentRolePolicyAttachment = new aws.iam.RolePolicyAttachment(
       role: cloudWatchAgentRole.name,
     }
   );
+
 
 const RoleProfile = new aws.iam.InstanceProfile("RoleProfile", {role: cloudWatchAgentRole.name});
 
@@ -434,7 +650,7 @@ const createDnsARecord = async (domainName) => {
         console.error(`Zone for domain '${domainName}' not found.`);
     }
 };
- 
+
 // Call the function to create DNS A record
 createDnsARecord(DomainName);
 
@@ -447,7 +663,7 @@ sudo sh -c 'echo "DB_PORT=3306" >> /opt/csye6225/webapp/.env'
 sudo sh -c 'echo "DB_DATABASE=${rdsInstance.dbName}" >> /opt/csye6225/webapp/.env'
 sudo sh -c 'echo "DB_USER=${rdsInstance.username}" >> /opt/csye6225/webapp/.env'
 sudo sh -c 'echo "DB_PASSWORD=${rdsInstance.password}" >> /opt/csye6225/webapp/.env'
-
+sudo sh -c 'echo "SNSTOPICARN=${snsArn}" >> /opt/csye6225/webapp/.env'
 
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
 -a fetch-config \
@@ -589,7 +805,6 @@ const listener = new aws.lb.Listener("applicationListener", {
         targetGroupArn: targetGroup.arn,
     }],
 });
-
 
 };
 

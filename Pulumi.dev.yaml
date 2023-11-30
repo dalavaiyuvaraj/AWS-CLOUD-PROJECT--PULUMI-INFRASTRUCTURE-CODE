@@ -1,9 +1,14 @@
 encryptionsalt: v1:OrMoWDPjF88=:v1:UGIIDHxezH9WSl+8:vleF7jAG59ETtdDzWWpbWsjHPZ1how==
 config:
   aws:region: us-east-1
-  aws:config:profile: yuvaraj-dev
+  aws:config:profile: dev
   my_vpc:cidrBlock: "10.0.0.0/16"
   my_publicRouteTable:cidrBlock: "0.0.0.0/0"
-  AMIID:AMIID: "ami-0bca40982e20c8476"
+  AMIID:AMIID: "ami-08d04b2ad4af1a47f"
   DomainName:DomainName: "dev.yuvarajmy.me"
   KeyPair:KeyPair: "EC2Instance_keypair"
+  gcp:project: "csye6225-dev-406408"
+  gcp:region: "us-east1"
+  source:email: "asdasdsa"
+  github:pat: "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"
+  mailgun:API: "44eab83f78a45ff218fcb55480ef5222-30b58138-5e6bf745"
