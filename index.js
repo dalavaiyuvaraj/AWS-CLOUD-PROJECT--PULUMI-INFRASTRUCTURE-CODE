@@ -22,6 +22,7 @@ require('dotenv').config();
 
 // Create a new GCP resource stack
 
+//create
 
 // Access environment variables
 
