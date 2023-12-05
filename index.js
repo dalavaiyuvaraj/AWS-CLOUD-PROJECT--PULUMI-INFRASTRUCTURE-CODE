@@ -15,6 +15,7 @@ const sourceEmail = new pulumi.Config("source").require("email");
 const region = new pulumi.Config("aws").require("region");
 const GithubPAT = new pulumi.Config("github").require("pat");
 const MailgunAPI = new pulumi.Config("mailgun").require("API");
+const cert = new pulumi.Config("aws1").require("cert");
 
 require('dotenv').config();
 
@@ -169,17 +170,17 @@ const appSecurityGroup = new aws.ec2.SecurityGroup("appSecurityGroup", {
 
     ingress: [
 
-        {
+        // {
 
-            fromPort: 22,
+        //     fromPort: 22,
 
-            toPort: 22,
+        //     toPort: 22,
 
-            protocol: "tcp",
+        //     protocol: "tcp",
 
-            cidrBlocks: ["0.0.0.0/0"],
+        //     cidrBlocks: ["0.0.0.0/0"],
 
-        },
+        // },
 
         // {
 
@@ -798,8 +799,10 @@ const alarmScaleDown = new aws.cloudwatch.MetricAlarm("alarmScaleDown", {
 // Create an Application Load Balancer Listener
 const listener = new aws.lb.Listener("applicationListener", {
     loadBalancerArn: LoadBalancer.arn,
-    port: 80,
-    protocol: "HTTP",
+    port: 443,
+    protocol: "HTTPS",
+    sslPolicy: "ELBSecurityPolicy-2016-08", // Specify the SSL policy
+    certificateArn: cert, // Add your SSL certificate ARN here
     defaultActions: [{
         type: "forward",
         targetGroupArn: targetGroup.arn,
